@@ -1,15 +1,17 @@
 .PHONY: run all clean
 
-
-run: all
-	FLASK_APP=flaskr FLASK_ENV=development flask run
+run: all app-env
+	FLASK_APP=spotical_backend FLASK_ENV=development flask run
 	
 venv/bin/activate: requirements.txt
 	test -d venv || virtualenv venv
-	. venv/bin/activate; pip install -Ur requirements.txt
+	. ./venv/bin/activate; pip install -Ur requirements.txt
 	touch venv/bin/activate
 
 all: venv/bin/activate 
+
+app-env:
+	. ./app_env
 
 clean:
 	rm -rf venv
