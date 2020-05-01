@@ -6,41 +6,43 @@ from flask import Response
 from flask import request 
 from flask import redirect
 from flask import make_response 
+from spotical_backend.util.uri_manager import build_full_uri
+from requests.auth import HTTPBasicAuth
+from functools import lru_cache
 import json
+
 
 AUTHORIZATION_URL = 'https://accounts.spotify.com/authorize?'
 AUTHENTICATION_URL = 'https://accounts.spotify.com/api/token' 
 SEVEN_DAYS_IN_SECONDS = 60*60*24*7 # seconds, minutes, hours, days
 
 
-#TODO: Add caching
+@lru_cache(maxsize=1)
 def get_client_id() -> str:
+    """Retrieve spotify client_id from environment variable"""
     return os.environ.get('SPOTIFY_CLIENT_ID')
 
 
-#TODO: Add caching
+@lru_cache(maxsize=1)
 def get_client_secret() -> str:
+    """Retrieve spotify client_secret from environment variable"""
     return os.environ.get('SPOTIFY_CLIENT_SECRET')
 
 
-def create_response_object(status_code: str):
-    response = Response()
-    response.status_code = status_code
-    return response
-
-
-def is_authenticated(func):
+def is_authenticated(func): 
+    """Wrapper function to verify a user has authenticated the app with spotify"""
     @wraps(func)
     def decorated_view(*args, **kwargs):
         access_token: str = request.cookies.get('access_token')
         if access_token:
             return func(*args, **kwargs)
         else:
-            return redirect('http://localhost:5000/auth/login?' + urlencode(request.args))
+            return redirect(build_full_uri('/auth/login', request.args))
     return decorated_view
 
 
-def can_be_authenticated():
+def can_be_authenticated() -> bool:
+    """Returns True if a user has authenticated with spotify already"""
     if any([
         request.cookies.get('refresh_token'),
         request.args.get('code')
@@ -50,29 +52,45 @@ def can_be_authenticated():
 
 
 def _get_authentication_tokens(code):
+    """Get authentication to allow this app to call user specific endpoints"""
     return requests.post(
         AUTHENTICATION_URL,
         data={
             'grant_type': 'authorization_code',
             'code': code,
-            'redirect_uri': 'http://localhost:5000/home',
-            'client_id': get_client_id(),
-            'client_secret': get_client_secret(),
-        }
+            'redirect_uri': build_full_uri('/', request.args)
+        },
+        auth=HTTPBasicAuth(get_client_id(), get_client_secret())
+    )
+
+
+def _get_new_access_token(refresh_token):
+    """If a user has already been authenticated their refresh token can be used to grab a new
+    access token
+    """
+    return requests.post(
+        AUTHENTICATION_URL,
+        data={
+            'grant_type': 'refresh_token',
+            'refresh_token': refresh_token,
+        },
+        auth=HTTPBasicAuth(get_client_id(), get_client_secret())
     )
 
 
 #TODO: Add encryption for tokens
+# https://medium.com/@sadnub/simple-and-secure-api-authentication-for-spas-e46bcea592ad  
 def authenticate():
+    """Store access_token and refresh_token in user cookies"""
     refresh_token: str = request.cookies.get('refresh_token')
     auth_code: str = request.args.get('code')
     if refresh_token:
-        auth_response = _get_authentication_tokens(refresh_token)
+        auth_response = _get_new_access_token(refresh_token)
     elif auth_code:
         auth_response = _get_authentication_tokens(auth_code)
 
     auth_response_dict = auth_response.json()
-    resp = make_response(redirect('http://localhost:5000/home'))
+    resp = make_response(redirect(build_full_uri('/', request.args)))
     resp.set_cookie(
         'access_token',
         auth_response_dict['access_token'],
@@ -80,23 +98,19 @@ def authenticate():
     )
     resp.set_cookie(
         'refresh_token',
-        auth_response_dict['refresh_token'],
+        refresh_token or auth_response_dict['refresh_token'],
         max_age=SEVEN_DAYS_IN_SECONDS 
     )
     return resp
 
 
 def get_authorize_redirect():
+    """Returns a redirect for user to enable this app to call user specific spotify endpoints"""
     query_params={
         'client_id': get_client_id(),
         'response_type': 'code',
-        'redirect_uri': 'http://localhost:5000/home',
+        'redirect_uri': build_full_uri('/', request.args),
         'scope': 'user-read-email user-read-private'
     }
     urlencoded_params = urlencode(query_params)
     return redirect(AUTHORIZATION_URL + urlencoded_params)
-
-
-def get_user_info():
-    access_token = request.cookies.get('access_token')
-    return requests.get('https://api.spotify.com/v1/me', headers={'Authorization': f'Bearer {access_token}'})

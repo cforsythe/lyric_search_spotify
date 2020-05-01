@@ -1,8 +1,9 @@
 import os
 
 from flask import Flask
-from spotical_backend import auth
-from spotical_backend import home
+from spotical_backend.blueprints import auth
+from spotical_backend.blueprints import home
+from spotical_backend.blueprints import api 
 
 
 def create_app(test_config=None):
@@ -14,6 +15,7 @@ def create_app(test_config=None):
     )
     app.register_blueprint(auth.bp)
     app.register_blueprint(home.bp)
+    app.register_blueprint(api.bp)
 
     if test_config is None:
         # load the instance config, if it exists, when not testing
