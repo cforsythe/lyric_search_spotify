@@ -3,3 +3,5 @@ client_secret.yaml
 instance/
 venv/
 *.py[c|o]
+*.sw[p|o]
+app_env
